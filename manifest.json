@@ -1,0 +1,8 @@
+{
+    "name": "ReSkateSkinSync",
+    "author": "izardyo",
+    "version_number": "1.0.0",
+    "website_url": "https://github.com",
+    "description": "Insanely optimized real-time cosmetic streaming plugin. Downloads single active clothes instead of whole asset packs to save RAM/CPU memory. Auto-deletes all cached data on shutdown.",
+    "dependencies": []
+}
