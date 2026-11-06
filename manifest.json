@@ -3,6 +3,6 @@
     "author": "izardyo",
     "version_number": "1.0.0",
     "website_url": "https://github.com",
-    "description": "Insanely optimized real-time cosmetic streaming plugin. Downloads single active clothes instead of whole asset packs to save RAM/CPU memory. Auto-deletes all cached data on shutdown.",
+    "description": "On-demand cosmetic asset streamer. Intercepts player apparel text IDs and pre-downloads individual files locally to remove CPU hitching and memory footprint. Wipes cache on exit.",
     "dependencies": []
 }
