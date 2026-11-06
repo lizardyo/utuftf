@@ -1,65 +1,110 @@
--- RE-SKATE ULTRA-OPTIMIZED ON-DEMAND COSMETIC STREAMER
-local SkinSync = {
-    pluginName = "MEMORY OPTIMIZER: SKIN SYNC",
-    cacheDir = "./ReSkate/Cache/SkinSync/",
-    activeRegistry = {},
-    downloadQueue = {}
+#include <iostream>
+#include <unordered_map>
+#include <string>
+#include <thread>
+#include <mutex>
+#include <queue>
+#include <filesystem>
+#include <windows.h>
+
+struct RemotePlayerAppearance {
+    uint32_t playerID;
+    const char* playerProfileName;
+    const char* equippedTopShirtName;    
+    const char* equippedBottomPantsName; 
+    const char* equippedShoesName;       
+    void* nativeVisualInstancePointer;
+};
+
+struct DynamicStreamAsset {
+    std::string assetStringIdentifier;
+    std::string temporaryCachedPath;
+    bool isCommittedToVRAM = false;
+};
+
+std::unordered_map<std::string, DynamicStreamAsset> g_StreamRegistry;
+std::queue<std::string> g_AssetDownloadQueue;
+std::mutex g_StreamMutex;
+bool g_PipelineWorkerActive = true;
+
+const std::string CACHE_ROOT_DIR = "./ReSkate/Cache/SkinSync/";
+
+void StreamAssetDownloadWorkerPipeline() {
+    while (g_PipelineWorkerActive) {
+        std::string activeAssetID = "";
+        {
+            std::lock_guard<std::mutex> lock(g_StreamMutex);
+            if (!g_AssetDownloadQueue.empty()) {
+                activeAssetID = g_AssetDownloadQueue.front();
+                g_AssetDownloadQueue.pop();
+            }
+        }
+
+        if (!activeAssetID.empty()) {
+            std::string localTargetFile = CACHE_ROOT_DIR + activeAssetID + ".cas";
+            if (!std::filesystem::exists(localTargetFile)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50)); 
+            }
+            std::lock_guard<std::mutex> lock(g_StreamMutex);
+            g_StreamRegistry[activeAssetID].temporaryCachedPath = localTargetFile;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    }
 }
 
--- Initialize clean disk workspace (Memory Optimization Rule)
-function SkinSync.Init()
-    -- Wipes previous temporary single-garment storage locations on boot
-    os.execute("rmdir /s /q \"ReSkate\\Cache\\SkinSync\" 2>nul")
-    os.execute("mkdir \"ReSkate\\Cache\\SkinSync\" 2>nul")
-    print("[" .. SkinSync.pluginName .. "] Temp file system ready. On-demand sync armed.")
-end
+void PurgeLocalSkinCache() {
+    if (std::filesystem::exists(CACHE_ROOT_DIR)) {
+        std::error_code err;
+        std::filesystem::remove_all(CACHE_ROOT_DIR, err);
+    }
+}
 
--- Intercepts active multiplayer session network data packets at 60Hz
-function SkinSync.OnUpdateTick(playerManagerInstance)
-    if not playerManagerInstance then return end
+extern "C" __declspec(dllexport) const char* GetPluginName() {
+    return "MEMORY OPTIMIZER: SKIN SYNC";
+}
 
-    -- Read current lobby connections directly from multiplayer peer vectors
-    local connectedPeers = playerManagerInstance.GetRemotePlayers()
-    if not connectedPeers then return end
+extern "C" __declspec(dllexport) void OnPluginMenuRender() {
+}
 
-    for _, player in ipairs(connectedPeers) do
-        -- Intercept individual garment text paths (e.g., "Own_Carhartt_Loyde_Shirt_Black")
-        local topShirtName = player.GetEquippedItemName("top_shirt")
+extern "C" __declspec(dllexport) void OnUpdateTick(void* clientPlayerManagerStructure) {
+    if (!clientPlayerManagerStructure) return;
 
-        if topShirtName and topShirtName ~= "" and not topShirtName:find("Gen_Tshirt") then
-            -- O(1) CPU Lookup efficiency check to ensure we don't repeat downloads
-            if not SkinSync.activeRegistry[topShirtName] then
-                SkinSync.activeRegistry[topShirtName] = {
-                    identifier = topShirtName,
-                    localPath = SkinSync.cacheDir .. topShirtName .. ".cas",
-                    isLoaded = false
-                }
-                -- Queue ONLY this single garment file instead of downloading a whole 15GB pack
-                table.insert(SkinSync.downloadQueue, topShirtName)
-                SkinSync.StreamSingleAsset(topShirtName)
-            else
-                -- If asset file exists locally on your hard drive, force load it immediately
-                local assetData = SkinSync.activeRegistry[topShirtName]
-                if not assetData.isLoaded then
-                    player.OverrideAppearanceMesh("top_shirt", assetData.localPath)
-                    assetData.isLoaded = true
-                end
-            end
-        end
-    end
-end
+    RemotePlayerAppearance* serverLobbyPlayers = *(RemotePlayerAppearance**)((uintptr_t)clientPlayerManagerStructure + 0x48);
+    int connectedPeerCount = *(int*)((uintptr_t)clientPlayerManagerStructure + 0x80);
 
--- Highly optimized isolated background file fetcher
-function SkinSync.StreamSingleAsset(assetName)
-    -- Asynchronously streams only the needed file to lower CPU costs and avoid stutters
-    local command = string.format("powershell -Command \"Start-Job -ScriptBlock { Invoke-WebRequest -Uri 'https://reskateskinsync.com' -OutFile '%s%s.cas' }\" >nul", 
-        assetName, SkinSync.cacheDir, assetName)
-    os.execute(command)
-end
+    for (int i = 0; i < connectedPeerCount; i++) {
+        RemotePlayerAppearance& targetPeer = serverLobbyPlayers[i];
+        if (!targetPeer.equippedTopShirtName || strlen(targetPeer.equippedTopShirtName) == 0) continue;
 
--- Bind directly to ReSkate Trainer Interface hooks
-ReSkate.RegisterPlugin({
-    name = SkinSync.pluginName,
-    onLoad = SkinSync.Init,
-    onTick = SkinSync.OnUpdateTick
-})
+        std::string currentTopID = std::string(targetPeer.equippedTopShirtName);
+        std::lock_guard<std::mutex> lock(g_StreamMutex);
+
+        if (g_StreamRegistry.find(currentTopID) == g_StreamRegistry.end()) {
+            DynamicStreamAsset incomingAsset;
+            incomingAsset.assetStringIdentifier = currentTopID;
+            g_StreamRegistry[currentTopID] = incomingAsset;
+            g_AssetDownloadQueue.push(currentTopID); 
+        } 
+        else if (!g_StreamRegistry[currentTopID].temporaryCachedPath.empty() && !g_StreamRegistry[currentTopID].isCommittedToVRAM) {
+            uintptr_t meshInstanceRenderer = *(uintptr_t*)((uintptr_t)targetPeer.nativeVisualInstancePointer + 0x18);
+            if (meshInstanceRenderer) {
+                *(const char**)(meshInstanceRenderer + 0x30) = g_StreamRegistry[currentTopID].temporaryCachedPath.c_str();
+                g_StreamRegistry[currentTopID].isCommittedToVRAM = true;
+            }
+        }
+    }
+}
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
+    switch (ul_reason_for_call) {
+    case DLL_PROCESS_ATTACH:
+        std::filesystem::create_directories(CACHE_ROOT_DIR);
+        std::thread(StreamAssetDownloadWorkerPipeline).detach();
+        break;
+    case DLL_PROCESS_DETACH:
+        g_PipelineWorkerActive = false;
+        PurgeLocalSkinCache(); 
+        break;
+    }
+    return TRUE;
+}

@@ -3,6 +3,6 @@
     "author": "izardyo",
     "version_number": "1.0.0",
     "website_url": "https://github.com",
-    "description": "On-demand cosmetic asset streamer. Intercepts player apparel text IDs and pre-downloads individual files locally to remove CPU hitching and memory footprint. Wipes cache on exit.",
+    "description": "On-demand cosmetic asset streamer plugin.",
     "dependencies": []
 }
