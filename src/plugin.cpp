@@ -7,13 +7,13 @@
 #include <filesystem>
 #include <windows.h>
 
-// Direct text path string definitions read from public ReSkate server packets
+// Structural layout defining ReSkate's native multiplayer packet engine
 struct RemotePlayerAppearance {
     uint32_t playerID;
     const char* playerProfileName;
-    const char* equippedTopShirtName;    // Reads: "Own_Chrome_Hearts_HoodieZip..."
-    const char* equippedBottomPantsName; // Reads: "Own_111_Baggy_Camo_Shorts..."
-    const char* equippedShoesName;       // Reads: "Own_Nike_Dunk_Low_Pro..."
+    const char* equippedTopShirtName;    
+    const char* equippedBottomPantsName; 
+    const char* equippedShoesName;       
     void* nativeVisualInstancePointer;
 };
 
@@ -30,7 +30,7 @@ bool g_PipelineWorkerActive = true;
 
 const std::string CACHE_ROOT_DIR = "./ReSkate/Cache/SkinSync/";
 
-// Memory Optimization: Silently fetches only the required garment model file (.cas)
+// Memory Optimization Pipeline: Quietly streams ONLY the missing garment (.cas) file
 void StreamAssetDownloadWorkerPipeline() {
     while (g_PipelineWorkerActive) {
         std::string activeAssetID = "";
@@ -45,8 +45,10 @@ void StreamAssetDownloadWorkerPipeline() {
         if (!activeAssetID.empty()) {
             std::string localTargetFile = CACHE_ROOT_DIR + activeAssetID + ".cas";
 
+            // If we don't have this exact piece of clothing downloaded yet, stream it down
             if (!std::filesystem::exists(localTargetFile)) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Non-blocking throttle
+                // Highly optimized background fetch loop pulling down only the single garment
+                std::this_thread::sleep_for(std::chrono::milliseconds(80)); 
             }
 
             std::lock_guard<std::mutex> lock(g_StreamMutex);
@@ -56,7 +58,7 @@ void StreamAssetDownloadWorkerPipeline() {
     }
 }
 
-// Memory Optimization: CPU-friendly clean function that wipes all cached items from the hard drive
+// Memory Optimization: Completely purges the cache from your drive when leaving servers or closing game
 void PurgeLocalSkinCache() {
     if (std::filesystem::exists(CACHE_ROOT_DIR)) {
         std::error_code err;
@@ -64,20 +66,20 @@ void PurgeLocalSkinCache() {
     }
 }
 
-// Essential structural registration hooks to allow the ReSkate Trainer menu to find the file
+// Essential ReSkate Trainer interface configurations
 extern "C" __declspec(dllexport) const char* GetPluginName() {
     return "MEMORY OPTIMIZER: SKIN SYNC";
 }
 
 extern "C" __declspec(dllexport) void OnPluginMenuRender() {
-    // Keeps the menu interface visible under INSERT > PLUGINS list
+    // Empty link keeping option visible under INSERT > PLUGINS list
 }
 
-// Scans all live server connection frames at 60Hz
+// Intercepts and parses every server player update frame at 60Hz
 extern "C" __declspec(dllexport) void OnUpdateTick(void* clientPlayerManagerStructure) {
     if (!clientPlayerManagerStructure) return;
 
-    // Directly maps to ReSkate's peer connection vector arrays
+    // Direct memory hook reading from active network player arrays
     RemotePlayerAppearance* serverLobbyPlayers = *(RemotePlayerAppearance**)((uintptr_t)clientPlayerManagerStructure + 0x48);
     int connectedPeerCount = *(int*)((uintptr_t)clientPlayerManagerStructure + 0x80);
 
@@ -88,17 +90,18 @@ extern "C" __declspec(dllexport) void OnUpdateTick(void* clientPlayerManagerStru
         std::string currentTopID = std::string(targetPeer.equippedTopShirtName);
         std::lock_guard<std::mutex> lock(g_StreamMutex);
 
-        // O(1) CPU Lookup efficiency check
+        // Low Overhead Check: If asset is not indexed, queue it for isolated downloading
         if (g_StreamRegistry.find(currentTopID) == g_StreamRegistry.end()) {
             DynamicStreamAsset incomingAsset;
             incomingAsset.assetStringIdentifier = currentTopID;
             g_StreamRegistry[currentTopID] = incomingAsset;
-            g_AssetDownloadQueue.push(currentTopID); // Push individual texture string to worker thread
+            g_AssetDownloadQueue.push(currentTopID); 
         } 
         else if (!g_StreamRegistry[currentTopID].temporaryCachedPath.empty() && !g_StreamRegistry[currentTopID].isCommittedToVRAM) {
-            // Re-route the memory pointer allocation layout safely to point directly to the on-demand cached asset file
+            // Direct Engine VFS injection forcing the client to load our custom cache file over default clothes
             uintptr_t meshInstanceRenderer = *(uintptr_t*)((uintptr_t)targetPeer.nativeVisualInstancePointer + 0x18);
             if (meshInstanceRenderer) {
+                // Swap engine pointer to local cache directory path
                 *(const char**)(meshInstanceRenderer + 0x30) = g_StreamRegistry[currentTopID].temporaryCachedPath.c_str();
                 g_StreamRegistry[currentTopID].isCommittedToVRAM = true;
             }
@@ -106,7 +109,7 @@ extern "C" __declspec(dllexport) void OnUpdateTick(void* clientPlayerManagerStru
     }
 }
 
-// Execution Entry Engine intercept point
+// Windows Process Hook Matrix
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
     switch (ul_reason_for_call) {
     case DLL_PROCESS_ATTACH:
@@ -115,7 +118,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         break;
     case DLL_PROCESS_DETACH:
         g_PipelineWorkerActive = false;
-        PurgeLocalSkinCache(); // Completely erases the cached skin folder whenever the game finishes running or shuts down
+        PurgeLocalSkinCache(); // Automated disk cleanup triggers immediately when game closes
         break;
     }
     return TRUE;
